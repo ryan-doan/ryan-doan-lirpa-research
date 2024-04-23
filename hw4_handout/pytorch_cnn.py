@@ -17,7 +17,14 @@ class PyTorchCNN(nn.Module):
         model (nn.Sequential): The model.
     """
 
-    def __init__(self, num_classes: int = 10, random_seed: int = 42) -> None:
+    def __init__(self, X_train: torch.Tensor,
+                y_train: torch.Tensor,
+                X_val: torch.Tensor,
+                y_val: torch.Tensor, 
+                learning_rate=0.001,
+                epochs = 10,
+                num_classes: int = 10, 
+                random_seed: int = 42) -> None:
         """
         Initialize the PyTorchCNN model.
 
@@ -43,6 +50,12 @@ class PyTorchCNN(nn.Module):
         random.seed(random_seed)
         
         self.num_classes = num_classes
+        self.X_train = X_train
+        self.y_train = y_train
+        self.X_val = X_val
+        self.y_val = y_val
+        self.epochs = epochs
+        self.learning_rate = learning_rate
 
         # Define the model that runs on Fashion MNIST
         # >>> YOUR CODE HERE >>>
@@ -91,13 +104,7 @@ class PyTorchCNN(nn.Module):
         output = self.model(x)
         return output
     
-    def train(self,
-                X_train: torch.Tensor,
-                y_train: torch.Tensor,
-                X_val: torch.Tensor,
-                y_val: torch.Tensor,
-                epochs: int = 10,
-                learning_rate: float = 0.001) -> None:
+    def train(self) -> None:
         """
         Train the neural network.
 
@@ -115,7 +122,7 @@ class PyTorchCNN(nn.Module):
 
         # Define the loss function and optimizer
         loss_function = nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(self.parameters(), lr=learning_rate)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
         train_losses = []
         train_accs = []
@@ -123,29 +130,29 @@ class PyTorchCNN(nn.Module):
         val_accs = []
 
 
-        for epoch in range(epochs):
+        for epoch in range(self.epochs):
             self.model.train()
 
             optimizer.zero_grad()
 
-            output = self.forward(X_train)
+            output = self.forward(self.X_train)
 
-            loss = loss_function(output, y_train)
+            loss = loss_function(output, self.y_train)
             loss.backward()
 
             optimizer.step()
 
             train_loss = loss.item()
             train_losses.append(train_loss)
-            train_accs.append(self.accuracy(X_train, y_train))
+            train_accs.append(self.accuracy(self.X_train, self.y_train))
 
             self.model.eval()
             with torch.no_grad():
-                val_losses.append(loss_function(self.forward(X_val), y_val).item())
-                val_accs.append(self.accuracy(X_val, y_val))
+                val_losses.append(loss_function(self.forward(self.X_val), self.y_val).item())
+                val_accs.append(self.accuracy(self.X_val, self.y_val))
 
             if (epoch+1) % 1 == 0:
-                print(f"[{epoch+1:} / {epochs}] | Train Loss: {train_loss:.5f} | Train Accuracy: {train_accs[-1]:.5f} | Val Loss: {val_losses[-1]:.5f} | Val Accuracy: {val_accs[-1]:.5f}")
+                print(f"[{epoch+1:} / {self.epochs}] | Train Loss: {train_loss:.5f} | Train Accuracy: {train_accs[-1]:.5f} | Val Loss: {val_losses[-1]:.5f} | Val Accuracy: {val_accs[-1]:.5f}")
     
         self.train_val_metrics = {
             "train_losses": train_losses,
@@ -291,8 +298,8 @@ if __name__ == "__main__":
         y_test = F.one_hot(y_test).float().to(device)
 
         # Train the neural network
-        pytorch_cnn = PyTorchCNN(num_classes=10).to(device)
-        pytorch_cnn.train(X_train, y_train, X_val, y_val, epochs=60, learning_rate=0.002)
+        pytorch_cnn = PyTorchCNN(X_train, y_train, X_val, y_val, epochs=60, learning_rate=0.002, num_classes=10).to(device)
+        pytorch_cnn.train()
             
 
         test_accuracy = pytorch_cnn.accuracy(X_test, y_test)

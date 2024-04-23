@@ -199,7 +199,7 @@ class PyTorchANN(nn.Module):
             # predict the class labels
             # >>> YOUR CODE HERE >>>
             output = self.forward(X)
-            labels = np.argmax(output, axis=1)
+            labels = output.argmax(dim=1)
             # <<< END OF YOUR CODE <<<
             return labels
 
@@ -293,8 +293,10 @@ if __name__ == "__main__":
 
         if torch.cuda.is_available():
             device = torch.device("cuda")
+            print_blue("Using cuda.")
         elif torch.backends.mps.is_available():
             device = torch.device("mps")
+            print_blue("Using mps.")
         else:
             device = torch.device("cpu")
             print_blue("GPU not available. Using CPU instead.")

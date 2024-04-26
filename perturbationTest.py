@@ -36,21 +36,12 @@ y_train = functional.one_hot(y_train).float().to(device)
 y_val = functional.one_hot(y_val).float().to(device)
 y_test = functional.one_hot(y_test).float().to(device)
 
-model = pytorch_cnn.PyTorchCNN(X_train, y_train, X_val, y_val, epochs=60, learning_rate=0.002, num_classes=10).to(device)
-lirpa_model = BoundedModule(model, X_train)
-
 #Lower and upper bounds for perturbation.
 lower = torch.tensor([[[0]*28]*28]).to(device)
 upper = torch.tensor([[[255]*28]*28]).to(device)
 
-#Define input perturbation
-ptb = PerturbationLpNorm(norm=np.inf, eps=10)
+ptb = PerturbationLpNorm(norm=np.inf, eps=10, x_L=0, x_U=255)
 perturbedInput = BoundedTensor(X_test, ptb)
-
-#Get prediction and compute bounds
-pred = lirpa_model(perturbedInput)
-print(f'Model prediction: {pred}')
-lb, ub = lirpa_model.compute_bounds(x=(perturbedInput,), method="backward")
-for j in range(10):
-    print("f_{j}(x_0): {l:8.3f} <= f_{j}(x_0+delta) <= {u:8.3f}".format(
-        j=j, l=lb[0][j], u=ub[0][j], r=ub[0][j] - lb[0][j]))
+#print(f'X_test: {X_test[0][0]}')
+#print(f'Perturbed X_test: {perturbedInput[0][0]}')
+print(torch.eq(X_test, perturbedInput))

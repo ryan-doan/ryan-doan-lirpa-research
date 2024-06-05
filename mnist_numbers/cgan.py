@@ -12,18 +12,22 @@ import torchvision.datasets as dset
 import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 
+from GCert.implementation.continuity import continuity
+
 # Define variables
 CUDA = False
 DATA_PATH = './data'
 batch_size = 128
-epochs = 5
+epochs = 30
 lr = 2e-4
 classes = 10
 channels = 1
 img_size = 64
 latent_dim = 100
 log_interval = 100
-seed = 42
+seed = 50
+training = False
+train_from_scratch = False
 
 class Generator(nn.Module):
     def __init__(self, classes, channels, img_size, latent_dim):
@@ -93,21 +97,28 @@ class Discriminator(nn.Module):
         return self.adv_loss(output, label)
     
 class CGAN(nn.Module):
-    def __init__(self, netG, netD, dataloader):
+    def __init__(self, netG, netD, dataloader, 
+                batch_size = 128, 
+                epochs = 5, 
+                lr = 2e-4, 
+                classes = 10, 
+                channels = 1, 
+                latent_dim = 100, 
+                log_interval = 100):
         super(CGAN, self).__init__()
-        self.batch_size = 128
-        self.epochs = 5
-        self.lr = 2e-4
-        self.classes = 10
-        self.channels = 1
-        self.latent_dim = 100
-        self.log_interval = 100
+        self.batch_size = batch_size
+        self.epochs = epochs
+        self.lr = lr
+        self.classes = classes
+        self.channels = channels
+        self.latent_dim = latent_dim
+        self.log_interval = log_interval
         self.netG = netG
         self.netD = netD
         self.dataloader = dataloader
 
     def forward(self, noise, labels):
-        return netG.forward(noise, labels)
+        return self.netG.forward(noise, labels)
     
     def save_weights(self):
         torch.save(self.netD.state_dict(), "cganD.pth")
@@ -124,8 +135,8 @@ class CGAN(nn.Module):
 
         img_list = []
 
-        netG.train()
-        netD.train()
+        self.netG.train()
+        self.netD.train()
         #viz_z = torch.zeros((batch_size, latent_dim), device=device)
         viz_noise = torch.randn(self.batch_size, self.latent_dim, device=device)
         nrows = self.batch_size // 8
@@ -139,21 +150,22 @@ class CGAN(nn.Module):
                 fake_label = torch.full((data.shape[0], 1), 0., device=device)
 
                 # Train G
-                netG.zero_grad()
-                z_noise = torch.randn(self.batch_size, self.latent_dim, device=device)
-                x_fake_labels = torch.randint(0, self.classes, (self.batch_size,), device=device)
-                x_fake = netG(z_noise, x_fake_labels)
-                y_fake_g = netD(x_fake, x_fake_labels)
-                g_loss = netD.loss(y_fake_g, real_label)
+                self.netG.zero_grad()
+                z_noise = torch.randn(data.shape[0], self.latent_dim, device=device)
+                x_fake_labels = torch.randint(0, self.classes, (data.shape[0],), device=device)
+                x_fake = self.netG(z_noise, x_fake_labels)
+                y_fake_g = self.netD(x_fake, x_fake_labels)
+                g_loss = self.netD.loss(y_fake_g, real_label)
+                g_loss += continuity(netG)
                 g_loss.backward()
                 optim_G.step()
 
                 # Train D
-                netD.zero_grad()
-                y_real = netD(data, target)
-                d_real_loss = netD.loss(y_real, real_label)
-                y_fake_d = netD(x_fake.detach(), x_fake_labels)
-                d_fake_loss = netD.loss(y_fake_d, fake_label)
+                self.netD.zero_grad()
+                y_real = self.netD(data, target)
+                d_real_loss = self.netD.loss(y_real, real_label)
+                y_fake_d = self.netD(x_fake.detach(), x_fake_labels)
+                d_fake_loss = self.netD.loss(y_fake_d, fake_label)
                 d_loss = (d_real_loss + d_fake_loss) / 2
                 d_loss.backward()
                 optim_D.step()
@@ -165,7 +177,7 @@ class CGAN(nn.Module):
                                 g_loss.mean().item()))
                     
                     with torch.no_grad():
-                        viz_sample = netG(viz_noise, viz_label)
+                        viz_sample = self.netG(viz_noise, viz_label)
                         img_list.append(vutils.make_grid(viz_sample, normalize=True))
 
 if __name__ == '__main__':
@@ -195,17 +207,28 @@ if __name__ == '__main__':
     print(netD)
 
     # Initialize CGAN
-    cgan = CGAN(netG, netD, dataloader)
+    cgan = CGAN(netG, netD, dataloader, batch_size, epochs, lr, classes, channels, latent_dim, log_interval)
 
-    # Train
-    cgan.train()
-    cgan.save_weights()
+    if training:
+        # Train
+        if not train_from_scratch:
+            cgan.load_weights()
+        cgan.train()
+        cgan.save_weights()
+    else:
+        # Load weights
+        cgan.load_weights()
+
+    # Generate the fake images
+    noise = torch.randn(batch_size, latent_dim, device=device)
+    label = torch.LongTensor(np.array([num % 10 for num in range(128)])).to(device)
+    output = []
+    sample = cgan.forward(noise, label)
+    output.append(vutils.make_grid(sample, normalize=True))
 
     # Plot the fake images
-    noise = torch.randn(batch_size, latent_dim, device=device)
-    label = torch.LongTensor(np.array([num for _ in range(16) for num in range(10)])).to(device)
     plt.figure(figsize=(15,15))
     plt.axis("off")
     plt.title("Fake Images")
-    plt.imshow(np.transpose(cgan.forward(noise, label),(1,2,0)))
+    plt.imshow(np.transpose(output[-1],(1,2,0)))
     plt.show()

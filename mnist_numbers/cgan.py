@@ -13,12 +13,13 @@ import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 
 from GCert.implementation.continuity import continuity
+from GCert.implementation import independence
 
 # Define variables
 CUDA = False
 DATA_PATH = './data'
 batch_size = 128
-epochs = 30
+epochs = 50
 lr = 2e-4
 classes = 10
 channels = 1
@@ -28,6 +29,7 @@ log_interval = 100
 seed = 50
 training = False
 train_from_scratch = False
+save = False
 
 class Generator(nn.Module):
     def __init__(self, classes, channels, img_size, latent_dim):
@@ -55,8 +57,7 @@ class Generator(nn.Module):
         layers.append(nn.LeakyReLU(0.2, inplace=True))
         return layers
 
-    def forward(self, noise, labels):
-        z = torch.cat((self.label_embedding(labels), noise), -1)
+    def forward(self, z):
         x = self.model(z)
         x = x.view(x.size(0), *self.img_shape)
         return x
@@ -117,8 +118,8 @@ class CGAN(nn.Module):
         self.netD = netD
         self.dataloader = dataloader
 
-    def forward(self, noise, labels):
-        return self.netG.forward(noise, labels)
+    def forward(self, z):
+        return self.netG.forward(z)
     
     def save_weights(self):
         torch.save(self.netD.state_dict(), "cganD.pth")
@@ -153,7 +154,7 @@ class CGAN(nn.Module):
                 self.netG.zero_grad()
                 z_noise = torch.randn(data.shape[0], self.latent_dim, device=device)
                 x_fake_labels = torch.randint(0, self.classes, (data.shape[0],), device=device)
-                x_fake = self.netG(z_noise, x_fake_labels)
+                x_fake = self.netG(torch.cat((self.netG.label_embedding(x_fake_labels), z_noise), -1))
                 y_fake_g = self.netD(x_fake, x_fake_labels)
                 g_loss = self.netD.loss(y_fake_g, real_label)
                 g_loss += continuity(netG)
@@ -177,7 +178,7 @@ class CGAN(nn.Module):
                                 g_loss.mean().item()))
                     
                     with torch.no_grad():
-                        viz_sample = self.netG(viz_noise, viz_label)
+                        viz_sample = self.netG(torch.cat((self.netG.label_embedding(viz_label), viz_noise), -1))
                         img_list.append(vutils.make_grid(viz_sample, normalize=True))
 
 if __name__ == '__main__':
@@ -214,21 +215,34 @@ if __name__ == '__main__':
         if not train_from_scratch:
             cgan.load_weights()
         cgan.train()
-        cgan.save_weights()
+        if save:
+            cgan.save_weights()
     else:
         # Load weights
         cgan.load_weights()
+    
+    # Generate multiple latent points
+    label = torch.LongTensor(np.array([num % 10 for num in range(128)])).to(device)
+    sample = []
+    for i in range(2):
+        latent_noise = torch.randn(batch_size, latent_dim, device=device)
+        latent_point = torch.cat((cgan.netG.label_embedding(label), latent_noise), -1)
+        sample.append(latent_point)
+    sample = torch.stack(sample)
 
     # Generate the fake images
-    noise = torch.randn(batch_size, latent_dim, device=device)
-    label = torch.LongTensor(np.array([num % 10 for num in range(128)])).to(device)
-    output = []
-    sample = cgan.forward(noise, label)
-    output.append(vutils.make_grid(sample, normalize=True))
+    images = []
+    output = cgan.forward(sample)
+    images.append(vutils.make_grid(output, normalize=True))
+    
+    # Get mutation directions
+    J = independence.Jacobian(netG, sample)
+    directions = independence.get_direction(J, None)
+    print(directions)
 
     # Plot the fake images
     plt.figure(figsize=(15,15))
     plt.axis("off")
     plt.title("Fake Images")
-    plt.imshow(np.transpose(output[-1],(1,2,0)))
+    plt.imshow(np.transpose(images[-1],(1,2,0)))
     plt.show()

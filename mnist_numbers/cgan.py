@@ -14,9 +14,10 @@ import matplotlib.pyplot as plt
 
 from GCert.implementation.continuity import continuity
 from GCert.implementation import independence
+from torch.autograd.functional import jacobian
 
 # Define variables
-CUDA = False
+CUDA = True
 DATA_PATH = './data'
 batch_size = 128
 epochs = 50
@@ -58,9 +59,10 @@ class Generator(nn.Module):
         return layers
 
     def forward(self, z):
-        x = self.model(z)
-        x = x.view(x.size(0), *self.img_shape)
-        return x
+        z = z.view(128, 110)
+        out = self.model(z)
+        out = out.view(out.size(0), *self.img_shape)
+        return out
     
 class Discriminator(nn.Module):
     def __init__(self, classes, channels, img_size, latent_dim):
@@ -203,9 +205,9 @@ if __name__ == '__main__':
 
     # Initialize generator and discriminator
     netG = Generator(classes, channels, img_size, latent_dim).to(device)
-    print(netG)
+    #print(netG)
     netD = Discriminator(classes, channels, img_size, latent_dim).to(device)
-    print(netD)
+    #print(netD)
 
     # Initialize CGAN
     cgan = CGAN(netG, netD, dataloader, batch_size, epochs, lr, classes, channels, latent_dim, log_interval)
@@ -220,29 +222,31 @@ if __name__ == '__main__':
     else:
         # Load weights
         cgan.load_weights()
-    
+
     # Generate multiple latent points
     label = torch.LongTensor(np.array([num % 10 for num in range(128)])).to(device)
-    sample = []
-    for i in range(2):
+    latent_points = []
+    for i in range(1):
         latent_noise = torch.randn(batch_size, latent_dim, device=device)
         latent_point = torch.cat((cgan.netG.label_embedding(label), latent_noise), -1)
-        sample.append(latent_point)
-    sample = torch.stack(sample)
+        latent_points.append(latent_point)
+    latent_points = torch.stack(latent_points)
 
     # Generate the fake images
-    images = []
-    output = cgan.forward(sample)
-    images.append(vutils.make_grid(output, normalize=True))
-    
+    output = []
+    output.append(vutils.make_grid(cgan.forward(latent_points[0]), normalize=True))
+
     # Get mutation directions
-    J = independence.Jacobian(netG, sample)
-    directions = independence.get_direction(J, None)
-    print(directions)
+    #J = independence.Jacobian(netG, latent_points)
+    #directions = independence.get_direction(J, None)
+    #print(directions)
+    jac = jacobian(netG, latent_points[0], create_graph=False,
+                    strict=False)
+    print(jac)
 
     # Plot the fake images
     plt.figure(figsize=(15,15))
     plt.axis("off")
     plt.title("Fake Images")
-    plt.imshow(np.transpose(images[-1],(1,2,0)))
+    plt.imshow(np.transpose(output[-1],(1,2,0)))
     plt.show()
